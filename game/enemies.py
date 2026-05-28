@@ -4,6 +4,7 @@ import random
 from game import engine
 from game.constants import *
 from commons.chaos_engine import ExplosionType, add_shake, DamageNumber, SoundType
+from game.elites import EliteModifier, BossPhaseManager, roll_elite_affixes, get_wave_scaling, EnemyAI
 
 damage_numbers = []  # shared reference, set from main
 
@@ -41,13 +42,16 @@ class Enemy:
         self._counted = False
 
         hp, spd, rad, col, gold, score = ENEMY_STATS.get(enemy_type, ENEMY_STATS["normal"])
-        self.max_hp = hp + wave * (10 if enemy_type != "boss" else 80)
+
+        # Wave scaling
+        scaling = get_wave_scaling(wave)
+        self.max_hp = int((hp + wave * (10 if enemy_type != "boss" else 80)) * scaling["hp_mult"])
         self.hp = self.max_hp
-        self.base_speed = spd + wave * 0.04
+        self.base_speed = (spd + wave * 0.04) * scaling["speed_mult"]
         self.speed = self.base_speed
         self.radius = rad
         self.color = col
-        self.gold_value = gold + wave
+        self.gold_value = int((gold + wave) * scaling["gold_mult"])
         self.score_value = score
         self.shield_hp = (30 + wave * 5) if enemy_type == "shielded" else 0
         self.max_shield = self.shield_hp
@@ -57,6 +61,20 @@ class Enemy:
         self.summon_timer = 0
         self.rot = random.uniform(0, math.pi * 2)
 
+        # Elite system
+        affixes = roll_elite_affixes(wave, enemy_type)
+        self.elite = EliteModifier(affixes)
+        if self.elite.is_elite:
+            self.max_hp = int(self.max_hp * 1.5)
+            self.hp = self.max_hp
+            self.gold_value = int(self.gold_value * 2)
+            self.score_value = int(self.score_value * 2)
+
+        # Boss phase system
+        self.boss_phases = BossPhaseManager()
+        if enemy_type == "boss" and wave >= 5:
+            self.boss_phases.active = True
+
     def update(self, enemies_list, dt):
         if not self.alive:
             return False, []
@@ -64,10 +82,23 @@ class Enemy:
         self.rot += 0.02 * dt
         spawned = []
 
+        # Elite modifiers update
+        self.elite.update(self, enemies_list, dt)
+
+        # Boss phases
+        boss_spawns = self.boss_phases.update(self, enemies_list, self.path, self.wave, dt)
+        spawned.extend(boss_spawns)
+
         speed_mult = 1.0
         if self.slow_timer > 0:
             self.slow_timer -= dt
             speed_mult = self.slow_factor
+
+        # Elite speed modifiers
+        speed_mult *= self.elite.modify_speed(1.0)
+        # Boss phase speed
+        if self.boss_phases.active:
+            speed_mult *= self.boss_phases.current_phase["speed_mult"]
 
         # Ghost phasing
         if self.enemy_type == "ghost":
@@ -148,6 +179,15 @@ class Enemy:
             engine.particles.emit(self.pos.x, self.pos.y, (200, 200, 255), 5, speed=3)
             return
 
+        # Elite damage modification (armor, dodge, immune)
+        dmg = self.elite.modify_damage_taken(dmg, self)
+        if dmg <= 0:
+            return
+
+        # Boss phase damage reduction
+        if self.boss_phases.active:
+            dmg = self.boss_phases.modify_damage(dmg)
+
         if self.shield_hp > 0:
             absorbed = min(self.shield_hp, dmg)
             self.shield_hp -= absorbed
@@ -217,6 +257,11 @@ class Enemy:
             pygame.draw.arc(surface, TEAL,
                             (pos[0] - r - 4, pos[1] - r - 4, (r + 4) * 2, (r + 4) * 2),
                             0, math.pi * 2 * pct, 2)
+
+        # Elite indicators
+        self.elite.draw_indicators(surface, pos, r)
+        # Boss phase indicator
+        self.boss_phases.draw(surface, pos, r)
 
         # HP bar
         bar_w = self.radius * 2.5
