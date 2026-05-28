@@ -1,0 +1,34 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install pygame numpy pyinstaller
+
+      - name: Build exe
+        run: |
+          pyinstaller --onefile --windowed --name ChaosEngine --add-data "config.json;." --add-data "commons;commons" --add-data "game;game" --hidden-import numpy --hidden-import pygame main.py
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ChaosEngine.exe
+          generate_release_notes: true
