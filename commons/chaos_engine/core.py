@@ -7,6 +7,7 @@ from commons.chaos_engine.entities import EntityManager
 from commons.chaos_engine.chaos import ChaosField
 from commons.chaos_engine.ui import UIRenderer
 from commons.chaos_engine.audio import AudioEngine
+from commons.chaos_engine.vfx import VFXManager
 
 
 class ChaosEngine:
@@ -30,6 +31,7 @@ class ChaosEngine:
         self.chaos = ChaosField(self.width, self.height)
         self.ui = UIRenderer()
         self.audio = AudioEngine()
+        self.vfx = VFXManager(self.width, self.height)
 
         # State
         self.running = True
@@ -74,6 +76,7 @@ class ChaosEngine:
                 self.chaos.apply_to(e.body, self.dt)
 
         self.particles.update(self.dt)
+        self.vfx.update(self.dt)
 
     def mouse_logical(self):
         """Get mouse position in logical coordinates."""

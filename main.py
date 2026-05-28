@@ -63,35 +63,40 @@ def regenerate_lanes():
 
 
 # === Hero (kept in main for now — uses skill tree) ===
+HERO_UNLOCK_COST = 500
+HERO_BUY_XP_BASE_COST = 50  # scales with level
+
+
 class Hero:
     def __init__(self, skill_tree):
         self.pos = pygame.Vector2(WIDTH - 100, HEIGHT // 2)
         self.radius = 18
         self.base_speed = 4.5
         self.alive = True
+        self.unlocked = False  # must be purchased
         self.trail = Trail(max_length=12)
         self.skill_tree = skill_tree
 
-        self.attack_damage = 25
-        self.attack_speed = 18
-        self.attack_range = 200
+        self.attack_damage = 15
+        self.attack_speed = 22
+        self.attack_range = 150
         self.attack_timer = 0
         self.target = None
         self.angle = 0
         self.level = 1
         self.xp = 0
-        self.xp_to_level = 80
+        self.xp_to_level = 150
         self.kills = 0
 
         self.q_cd = 0
-        self.q_max = 150
+        self.q_max = 200
         self.w_cd = 0
-        self.w_max = 300
+        self.w_max = 360
         self.rally_active = 0
         self.e_cd = 0
-        self.e_max = 200
+        self.e_max = 260
         self.r_cd = 0
-        self.r_max = 540
+        self.r_max = 660
 
         self.swing_anim = 0
         self.swing_angle = 0
@@ -100,6 +105,22 @@ class Hero:
         self.e_target_pos = None
         self.r_anim = 0
         self.move_bob = 0
+
+    def get_buy_xp_cost(self):
+        return HERO_BUY_XP_BASE_COST + self.level * 30
+
+    def get_buy_xp_amount(self):
+        return int(self.xp_to_level * 0.25)
+
+    def buy_xp(self, state):
+        """Spend gold to gain 25% of level XP. Returns True if purchased."""
+        cost = self.get_buy_xp_cost()
+        if state["gold"] >= cost:
+            state["gold"] -= cost
+            self.gain_xp(self.get_buy_xp_amount())
+            engine.audio.play(SoundType.COIN, 0.5)
+            return True
+        return False
 
     @property
     def speed(self):
@@ -119,14 +140,16 @@ class Hero:
         return self.attack_damage * (1 + mods.get("ability_damage_mult", 0))
 
     def gain_xp(self, amount):
+        if not self.unlocked:
+            return
         self.xp += amount
         while self.xp >= self.xp_to_level:
             self.xp -= self.xp_to_level
             self.level += 1
-            self.xp_to_level = int(self.xp_to_level * 1.35)
-            self.attack_damage += 10
-            self.attack_range += 8
-            self.attack_speed = max(6, self.attack_speed - 1)
+            self.xp_to_level = int(self.xp_to_level * 1.8)  # much steeper curve
+            self.attack_damage += 5  # slower scaling
+            self.attack_range += 4
+            self.attack_speed = max(10, self.attack_speed - 1)
             self.skill_tree.add_point()
             engine.particles.explode(self.pos.x, self.pos.y, GOLD, ExplosionType.CONFETTI, 1.5)
             engine.audio.play(SoundType.LEVELUP)
@@ -134,7 +157,7 @@ class Hero:
             damage_numbers.append(DamageNumber(self.pos.x, self.pos.y - 30, self.level, GOLD, True))
 
     def update(self, keys, enemies, projectiles_list, dt):
-        if not self.alive:
+        if not self.alive or not self.unlocked:
             return
 
         move = pygame.Vector2(0, 0)
@@ -247,8 +270,11 @@ class Hero:
         for e in enemies:
             if e.alive and (e.pos - self.pos).length() < 130:
                 e.take_damage(dmg)
+                engine.vfx.flash(e.pos.x, e.pos.y, CYAN, 8)
                 hits += 1
         engine.particles.explode(self.pos.x, self.pos.y, CYAN, ExplosionType.SHOCKWAVE, 1.5)
+        engine.vfx.ring(self.pos.x, self.pos.y, CYAN, 130)
+        engine.vfx.shockwave(self.pos.x, self.pos.y, 130)
         add_shake(6)
         if hits:
             self.gain_xp(hits * 5)
@@ -259,6 +285,7 @@ class Hero:
         self.w_cd = self.w_max
         self.rally_active = 180
         engine.particles.explode(self.pos.x, self.pos.y, GOLD, ExplosionType.RING, 1.0)
+        engine.vfx.ring(self.pos.x, self.pos.y, GOLD, 220)
 
     def ability_e(self, enemies):
         if self.e_cd > 0:
@@ -287,6 +314,9 @@ class Hero:
         self.r_anim = 30
         add_shake(25)
         engine.particles.chain_explosion(self.pos.x, self.pos.y, MAGENTA, 200, 10, 2.5)
+        engine.vfx.shockwave(self.pos.x, self.pos.y, 250)
+        engine.vfx.ring(self.pos.x, self.pos.y, MAGENTA, 200)
+        engine.vfx.flash(self.pos.x, self.pos.y, WHITE, 20)
         dmg = self.get_ability_damage() * 4
         for e in enemies:
             if not e.alive:
@@ -300,7 +330,7 @@ class Hero:
                                      random.choice(list(ExplosionType)), 0.6)
 
     def draw(self, surface):
-        if not self.alive:
+        if not self.alive or not self.unlocked:
             return
         pos = (int(self.pos.x), int(self.pos.y))
         bob = math.sin(self.move_bob) * 2
@@ -599,22 +629,34 @@ def draw_hud(surface, state, hero, wave_mgr, game_chaos, economy):
     if wave_mgr.between_waves:
         secs = max(0, int(wave_mgr.pause_timer / 60))
         engine.ui.text_centered(surface, f"Next: {secs}s [SPACE]", WIDTH // 2, 45, (120, 120, 120), engine.ui.font_small)
-    engine.ui.text(surface, f"Hero Lv{hero.level} | Kills:{hero.kills} | SP:{hero.skill_tree.points}",
-                   WIDTH - 300, 12, CYAN, engine.ui.font_small)
-    xp_pct = hero.xp / hero.xp_to_level
-    engine.ui.progress_bar(surface, WIDTH - 300, 30, 150, 8, xp_pct, GOLD)
+    if hero.unlocked:
+        engine.ui.text(surface, f"Hero Lv{hero.level} | Kills:{hero.kills} | SP:{hero.skill_tree.points}",
+                       WIDTH - 300, 12, CYAN, engine.ui.font_small)
+        xp_pct = hero.xp / hero.xp_to_level
+        engine.ui.progress_bar(surface, WIDTH - 300, 30, 150, 8, xp_pct, GOLD)
+        buy_cost = hero.get_buy_xp_cost()
+        buy_col = GOLD if state["gold"] >= buy_cost else (80, 80, 80)
+        engine.ui.text(surface, f"[B] Buy XP: ${buy_cost}", WIDTH - 140, 30, buy_col, engine.ui.font_small)
+    else:
+        unlock_col = GOLD if state["gold"] >= HERO_UNLOCK_COST else RED
+        engine.ui.text(surface, f"[H] Unlock Hero: ${HERO_UNLOCK_COST}",
+                       WIDTH - 300, 12, unlock_col, engine.ui.font_med)
+        engine.ui.text(surface, "Towers only until hero unlocked",
+                       WIDTH - 300, 34, (80, 80, 80), engine.ui.font_small)
+
     abilities = [
         ("Q", hero.q_cd, hero.q_max, CYAN),
         ("T", hero.w_cd, hero.w_max, GOLD),
         ("E", hero.e_cd, hero.e_max, RED),
         ("F", hero.r_cd, hero.r_max, MAGENTA),
     ]
-    ax = WIDTH - 300
-    for name, cd, mx, col in abilities:
-        fill = 1.0 - cd / mx if mx > 0 else 1.0
-        engine.ui.cooldown_icon(surface, ax, 45, 30, fill, col, name)
-        ax += 38
-    engine.ui.text(surface, "[TAB] Skills", WIDTH - 110, 45, (60, 80, 60), engine.ui.font_small)
+    if hero.unlocked:
+        ax = WIDTH - 300
+        for name, cd, mx, col in abilities:
+            fill = 1.0 - cd / mx if mx > 0 else 1.0
+            engine.ui.cooldown_icon(surface, ax, 45, 30, fill, col, name)
+            ax += 38
+        engine.ui.text(surface, "[TAB] Skills", WIDTH - 110, 45, (60, 80, 60), engine.ui.font_small)
     game_chaos.draw(surface)
 
 
@@ -705,13 +747,27 @@ class PlayingState(BaseState):
                 if event.key == pygame.K_m:
                     engine.audio.toggle_mute()
 
-                if event.key == pygame.K_q:
+                # Hero unlock (H key)
+                if event.key == pygame.K_h and not self.hero.unlocked:
+                    if self.state["gold"] >= HERO_UNLOCK_COST:
+                        self.state["gold"] -= HERO_UNLOCK_COST
+                        self.hero.unlocked = True
+                        engine.audio.play(SoundType.POWERUP)
+                        engine.particles.explode(self.hero.pos.x, self.hero.pos.y, CYAN,
+                                                 ExplosionType.NOVA, 2.0)
+                        add_shake(8)
+
+                # Buy XP (B key)
+                if event.key == pygame.K_b and self.hero.unlocked:
+                    self.hero.buy_xp(self.state)
+
+                if event.key == pygame.K_q and self.hero.unlocked:
                     self.hero.ability_q(self.enemies)
-                if event.key == pygame.K_t:
+                if event.key == pygame.K_t and self.hero.unlocked:
                     self.hero.ability_w(self.towers)
-                if event.key == pygame.K_e:
+                if event.key == pygame.K_e and self.hero.unlocked:
                     self.hero.ability_e(self.enemies)
-                if event.key == pygame.K_f:
+                if event.key == pygame.K_f and self.hero.unlocked:
                     self.hero.ability_r(self.enemies)
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -789,7 +845,7 @@ class PlayingState(BaseState):
                 e._counted = True
                 self.state["gold"] += e.gold_value
                 self.state["score"] += e.score_value
-                self.hero.gain_xp(e.score_value)
+                self.hero.gain_xp(int(e.score_value * 0.4))
                 self.hero.kills += 1
                 self.economy.gold_per_sec = 2 + self.hero.kills // 15
                 engine.audio.play(SoundType.COIN, 0.25)
@@ -805,12 +861,20 @@ class PlayingState(BaseState):
         self.game_chaos.update(self.state, self.enemies, self.towers, dt)
         engine.particles.update(dt)
 
+        # VFX: warp grid near hero position
+        if self.hero.unlocked:
+            engine.vfx.warp_grid(self.hero.pos, 80)
+
         for d in damage_numbers:
             d.update(dt)
         damage_numbers[:] = [d for d in damage_numbers if d.life > 0]
 
     def draw(self, surface):
         surface.fill(BG_COLOR)
+
+        # VFX background layer (grid + ambient particles)
+        engine.vfx.draw_background(surface)
+
         draw_paths(surface)
 
         if self.placing:
@@ -828,10 +892,17 @@ class PlayingState(BaseState):
         self.hero.draw(surface)
         self.base.draw(surface)
         engine.particles.draw(surface)
+
+        # VFX foreground layer (beams, lightning, rings, shockwaves, flashes)
+        engine.vfx.draw_foreground(surface)
+
         for d in damage_numbers:
             d.draw(surface)
         draw_hud(surface, self.state, self.hero, self.wave_mgr, self.game_chaos, self.economy)
         draw_shop(surface, self.state["gold"], self.selected_tower, self.shop_selected)
+
+        # VFX post-process (bloom + vignette) — applied last
+        engine.vfx.draw_post_process(surface)
 
         if self.game_over:
             engine.ui.overlay(surface, 180)

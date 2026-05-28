@@ -123,6 +123,15 @@ class MenuTitleState(BaseState):
         for btn in self.buttons:
             btn.update(mouse_pos, dt)
 
+        # VFX update
+        engine.vfx.update(dt)
+        # Periodic pulse rings for atmosphere
+        if random.random() < 0.02:
+            rx = random.randint(100, self.W - 100)
+            ry = random.randint(100, self.H - 100)
+            color = random.choice([CYAN, MAGENTA, PURPLE])
+            engine.vfx.ring(rx, ry, color, random.randint(50, 150))
+
         # Emit background particles
         if random.random() < 0.3:
             x = random.randint(0, self.W)
@@ -135,7 +144,11 @@ class MenuTitleState(BaseState):
 
     def draw(self, surface):
         surface.fill(BG_COLOR)
+
+        # VFX background (grid + ambient)
+        engine.vfx.draw_background(surface)
         engine.particles.draw(surface)
+        engine.vfx.draw_foreground(surface)
 
         # Title
         title_y = self.H // 4

@@ -200,6 +200,9 @@ class Enemy:
             dmg *= 2.2
         self.hp -= dmg
         damage_numbers.append(DamageNumber(self.pos.x, self.pos.y, dmg, YELLOW if crit else WHITE, crit))
+        # VFX hit flash
+        flash_color = YELLOW if crit else WHITE
+        engine.vfx.flash(self.pos.x, self.pos.y, flash_color, self.radius if crit else 6)
         if self.hp <= 0:
             self.die()
 
@@ -208,6 +211,9 @@ class Enemy:
         if self.enemy_type == "boss":
             engine.audio.play(SoundType.EXPLOSION, 1.0)
             engine.particles.chain_explosion(self.pos.x, self.pos.y, self.color, 150, 8, 2.0)
+            engine.vfx.shockwave(self.pos.x, self.pos.y, 200)
+            engine.vfx.ring(self.pos.x, self.pos.y, self.color, 150)
+            engine.vfx.flash(self.pos.x, self.pos.y, WHITE, 30)
             add_shake(20)
         elif self.enemy_type == "exploder":
             engine.audio.play(SoundType.EXPLOSION, 0.8)

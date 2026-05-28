@@ -7,6 +7,11 @@ from commons.chaos_engine.chaos import ChaosField, ChaosEvent, CHAOS_MODES
 from commons.chaos_engine.ui import UIRenderer
 from commons.chaos_engine.audio import AudioEngine, SoundType, SoundGenerator, BGMGenerator
 from commons.chaos_engine.config import load_config
+from commons.chaos_engine.vfx import (
+    VFXManager, BloomEffect, NeonTrail, PulseRingSystem, PulseRing,
+    Lightning, BackgroundGrid, Vignette, HitFlash, EnergyBeam,
+    Shockwave, ShockwaveSystem, AmbientParticles,
+)
 
 __all__ = [
     "ChaosEngine", "ParticleSystem", "Particle", "ExplosionType",
@@ -16,4 +21,7 @@ __all__ = [
     "ChaosField", "ChaosEvent", "CHAOS_MODES",
     "UIRenderer", "AudioEngine", "SoundType", "SoundGenerator",
     "load_config",
+    "VFXManager", "BloomEffect", "NeonTrail", "PulseRingSystem", "PulseRing",
+    "Lightning", "BackgroundGrid", "Vignette", "HitFlash", "EnergyBeam",
+    "Shockwave", "ShockwaveSystem", "AmbientParticles",
 ]
