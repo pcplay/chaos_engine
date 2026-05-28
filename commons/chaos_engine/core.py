@@ -6,6 +6,7 @@ from commons.chaos_engine.physics import CollisionSystem
 from commons.chaos_engine.entities import EntityManager
 from commons.chaos_engine.chaos import ChaosField
 from commons.chaos_engine.ui import UIRenderer
+from commons.chaos_engine.audio import AudioEngine
 
 
 class ChaosEngine:
@@ -28,6 +29,7 @@ class ChaosEngine:
         self.entities = EntityManager(self.config.get("max_entities", 1000))
         self.chaos = ChaosField(self.width, self.height)
         self.ui = UIRenderer()
+        self.audio = AudioEngine()
 
         # State
         self.running = True

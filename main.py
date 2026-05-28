@@ -17,7 +17,7 @@ from commons.chaos_engine import (
     Camera, add_shake, DamageNumber, Trail,
     Entity, EntityManager,
     ChaosField, ChaosEvent, CHAOS_MODES,
-    UIRenderer, load_config,
+    UIRenderer, AudioEngine, SoundType, load_config,
 )
 
 # === Colors ===
@@ -197,9 +197,11 @@ class Enemy:
     def die(self):
         self.alive = False
         if self.enemy_type == "boss":
+            engine.audio.play(SoundType.EXPLOSION, 1.0)
             engine.particles.chain_explosion(self.pos.x, self.pos.y, self.color, 150, 8, 2.0)
             add_shake(20)
         elif self.enemy_type == "exploder":
+            engine.audio.play(SoundType.EXPLOSION, 0.8)
             engine.particles.explode(self.pos.x, self.pos.y, YELLOW, ExplosionType.SHOCKWAVE, 1.5)
             add_shake(8)
             for e in enemies:
@@ -504,6 +506,20 @@ class Tower:
         x, y = self.pos.x, self.pos.y
         muzzle_x = x + math.cos(self.angle) * 25
         muzzle_y = y + math.sin(self.angle) * 25
+
+        # Sound per tower type
+        _tower_sounds = {
+            "arrow": SoundType.SHOOT,
+            "cannon": SoundType.EXPLOSION,
+            "frost": SoundType.FROST,
+            "lightning": SoundType.LIGHTNING,
+            "sniper": SoundType.LASER,
+            "chaos": SoundType.CHAOS_EVENT,
+            "flame": SoundType.FLAME,
+            "missile": SoundType.MISSILE_LAUNCH,
+        }
+        snd = _tower_sounds.get(self.tower_type, SoundType.SHOOT)
+        engine.audio.play(snd, 0.4)
 
         if self.tower_type == "arrow":
             projectiles_list.append(Projectile(x, y, self.target, self.damage, speed=12, color=self.color))
@@ -925,6 +941,7 @@ class Hero:
             self.attack_range += 8
             self.attack_speed = max(6, self.attack_speed - 1)
             engine.particles.explode(self.pos.x, self.pos.y, GOLD, ExplosionType.CONFETTI, 1.5)
+            engine.audio.play(SoundType.LEVELUP)
             add_shake(5)
             damage_numbers.append(DamageNumber(self.pos.x, self.pos.y - 30, self.level, GOLD, True))
 
@@ -1333,6 +1350,7 @@ class GameChaos:
         event = random.choice(GAME_CHAOS_EVENTS)
         self.event_duration = 300
         self.event_text = f"CHAOS: {event.replace('_', ' ').upper()}!"
+        engine.audio.play(SoundType.CHAOS_EVENT)
 
         if event == "double_speed":
             for e in enemies:
@@ -1515,9 +1533,9 @@ def draw_hud(surface, state, hero, wave_mgr, game_chaos):
 
     abilities = [
         ("Q", hero.q_cd, hero.q_max, CYAN),
-        ("W", hero.w_cd, hero.w_max, GOLD),
+        ("T", hero.w_cd, hero.w_max, GOLD),
         ("E", hero.e_cd, hero.e_max, RED),
-        ("R", hero.r_cd, hero.r_max, MAGENTA),
+        ("F", hero.r_cd, hero.r_max, MAGENTA),
     ]
     ax = WIDTH - 280
     for name, cd, mx, col in abilities:
@@ -1595,6 +1613,8 @@ while engine.running:
 
             if event.key == pygame.K_SPACE and wave_mgr.between_waves:
                 wave_mgr.start_wave(wave_mgr.wave + 1)
+                engine.audio.play(SoundType.WAVE_START)
+                engine.audio.play(SoundType.WAVE_START)
                 state["wave"] = wave_mgr.wave
 
             tower_keys = [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4,
@@ -1610,12 +1630,16 @@ while engine.running:
                 if cost and state["gold"] >= cost:
                     state["gold"] -= cost
                     selected_tower.upgrade()
+                    engine.audio.play(SoundType.UPGRADE)
+                    engine.audio.play(SoundType.UPGRADE)
 
             if event.key == pygame.K_x and selected_tower:
                 refund = TOWER_DATA[selected_tower.tower_type]["cost"] // 2
                 state["gold"] += refund
                 towers.remove(selected_tower)
+                engine.audio.play(SoundType.SELL)
                 selected_tower = None
+                engine.audio.play(SoundType.SELL)
 
             if event.key == pygame.K_ESCAPE:
                 placing = False
@@ -1647,6 +1671,7 @@ while engine.running:
                         if can and mouse_pos.y < HEIGHT - 95:
                             state["gold"] -= cost
                             towers.append(Tower(mouse_pos.x, mouse_pos.y, shop_selected))
+                            engine.audio.play(SoundType.PLACE_TOWER)
                             engine.particles.explode(mouse_pos.x, mouse_pos.y,
                                                      TOWER_DATA[shop_selected]["color"],
                                                      ExplosionType.CONFETTI, 0.6)
@@ -1686,6 +1711,7 @@ while engine.running:
         reached = e.update(enemies, dt)
         if reached:
             base.take_damage()
+            engine.audio.play(SoundType.DAMAGE_TAKEN, 0.8)
             if base.hp <= 0:
                 game_over = True
                 engine.particles.chain_explosion(base.pos.x, base.pos.y, RED, 200, 12, 3.0)
@@ -1699,6 +1725,7 @@ while engine.running:
         if not e.alive and not e._counted:
             e._counted = True
             state["gold"] += e.gold_value
+            engine.audio.play(SoundType.COIN, 0.3)
             state["score"] += e.score_value
             hero.gain_xp(e.score_value)
             hero.kills += 1
