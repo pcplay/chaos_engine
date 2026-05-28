@@ -5,7 +5,7 @@ from commons.chaos_engine.rendering import Camera, shake_offset, add_shake, Dama
 from commons.chaos_engine.entities import Entity, EntityManager
 from commons.chaos_engine.chaos import ChaosField, ChaosEvent, CHAOS_MODES
 from commons.chaos_engine.ui import UIRenderer
-from commons.chaos_engine.audio import AudioEngine, SoundType, SoundGenerator
+from commons.chaos_engine.audio import AudioEngine, SoundType, SoundGenerator, BGMGenerator
 from commons.chaos_engine.config import load_config
 
 __all__ = [
