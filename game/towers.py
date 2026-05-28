@@ -487,61 +487,13 @@ class Tower:
         if selected:
             pygame.draw.circle(surface, (50, 50, 70), pos, self.range, 1)
 
-        # Basic tower draw (simplified — keeping core visuals)
-        pygame.draw.circle(surface, DARK_GRAY, pos, base_r)
-        pygame.draw.circle(surface, self.color, pos, base_r, 2)
-
-        # Barrel for most types
-        if self.tower_type not in ("tesla", "vortex"):
-            bl = base_r + 12 - self.recoil
-            bx = self.pos.x + math.cos(self.angle) * bl
-            by = self.pos.y + math.sin(self.angle) * bl
-            w = 5 if self.tower_type in ("cannon", "missile") else 2
-            pygame.draw.line(surface, self.color, pos, (int(bx), int(by)), w)
-
-        # Type-specific visuals
-        if self.tower_type == "laser" and self.beam_target and self.beam_target.alive:
-            # Beam
-            ramp = min(1.0, self.beam_damage_ramp / 3.0)
-            w = max(2, int(4 * ramp))
-            color = (255, int(50 + 100 * (1 - ramp)), int(50 * (1 - ramp)))
-            pygame.draw.line(surface, color, pos,
-                             (int(self.beam_target.pos.x), int(self.beam_target.pos.y)), w)
-            # Glow at hit point
-            pygame.draw.circle(surface, (255, 200, 200),
-                               (int(self.beam_target.pos.x), int(self.beam_target.pos.y)),
-                               int(5 * ramp))
-
-        elif self.tower_type == "tesla":
-            # Pulsing aura circle
-            pulse = 1 + math.sin(engine.frame_count * 0.1) * 0.1
-            pygame.draw.circle(surface, (100, 100, 150), pos, int(self.range * pulse), 1)
-            # Central orb
-            pygame.draw.circle(surface, (200, 200, 255), pos, 8)
-            pygame.draw.circle(surface, WHITE, pos, 4)
-
-        elif self.tower_type == "vortex":
-            # Spinning vortex lines
-            for i in range(4):
-                a = engine.frame_count * 0.05 + math.pi / 2 * i
-                inner = 10
-                outer = self.range * 0.8
-                for seg in range(5):
-                    t = seg / 5
-                    r_dist = inner + (outer - inner) * t
-                    seg_a = a + t * 1.5
-                    sx = int(self.pos.x + math.cos(seg_a) * r_dist)
-                    sy = int(self.pos.y + math.sin(seg_a) * r_dist)
-                    alpha = 1 - t
-                    c = (int(150 * alpha), int(50 * alpha), int(200 * alpha))
-                    pygame.draw.circle(surface, c, (sx, sy), max(1, int(3 * alpha)))
-
-        elif self.tower_type == "necro":
-            # Dark aura
-            pygame.draw.circle(surface, (30, 60, 30), pos, base_r - 2)
+        # Dispatch to unique sprite
+        draw_fn = getattr(self, f"_draw_{self.tower_type}", None)
+        if draw_fn:
+            draw_fn(surface, pos, base_r)
+        else:
+            pygame.draw.circle(surface, DARK_GRAY, pos, base_r)
             pygame.draw.circle(surface, self.color, pos, base_r, 2)
-            # Skull indicator
-            pygame.draw.circle(surface, (200, 255, 200), pos, 5)
 
         # Flame stream
         if self.flame_stream and len(self.flame_stream) > 1:
@@ -589,3 +541,215 @@ class Tower:
         # Ghost allies
         for ghost in self.ghost_allies:
             ghost.draw(surface)
+
+    # === UNIQUE TOWER SPRITES ===
+
+    def _draw_arrow(self, surface, pos, r):
+        for i in range(6):
+            a1 = math.pi / 3 * i
+            a2 = math.pi / 3 * (i + 1)
+            p1 = (int(self.pos.x + math.cos(a1) * r), int(self.pos.y + math.sin(a1) * r))
+            p2 = (int(self.pos.x + math.cos(a2) * r), int(self.pos.y + math.sin(a2) * r))
+            pygame.draw.line(surface, CYAN, p1, p2, 2)
+        pygame.draw.circle(surface, (20, 40, 50), pos, r - 4)
+        pygame.draw.circle(surface, CYAN, pos, 5)
+        bl = r + 14
+        bx = self.pos.x + math.cos(self.angle) * bl
+        by = self.pos.y + math.sin(self.angle) * bl
+        pygame.draw.line(surface, CYAN, pos, (int(bx), int(by)), 2)
+        tip = 7
+        tx = bx + math.cos(self.angle) * tip
+        ty = by + math.sin(self.angle) * tip
+        lx = bx + math.cos(self.angle + 2.5) * tip
+        ly = by + math.sin(self.angle + 2.5) * tip
+        rx = bx + math.cos(self.angle - 2.5) * tip
+        ry = by + math.sin(self.angle - 2.5) * tip
+        pygame.draw.polygon(surface, CYAN, [(int(tx), int(ty)), (int(lx), int(ly)), (int(rx), int(ry))])
+
+    def _draw_cannon(self, surface, pos, r):
+        half = r
+        pts = [(int(self.pos.x - half), int(self.pos.y - half)), (int(self.pos.x + half), int(self.pos.y - half)),
+               (int(self.pos.x + half), int(self.pos.y + half)), (int(self.pos.x - half), int(self.pos.y + half))]
+        pygame.draw.polygon(surface, (50, 35, 20), pts)
+        pygame.draw.polygon(surface, ORANGE, pts, 2)
+        bl = r + 16 - self.recoil
+        bx = self.pos.x + math.cos(self.angle) * bl
+        by = self.pos.y + math.sin(self.angle) * bl
+        pygame.draw.line(surface, ORANGE, (int(self.pos.x + math.cos(self.angle) * r * 0.5),
+                         int(self.pos.y + math.sin(self.angle) * r * 0.5)), (int(bx), int(by)), 6)
+        pygame.draw.line(surface, (200, 120, 30), (int(self.pos.x + math.cos(self.angle) * r * 0.5),
+                         int(self.pos.y + math.sin(self.angle) * r * 0.5)), (int(bx), int(by)), 3)
+        px = math.cos(self.angle + math.pi / 2) * 5
+        py_o = math.sin(self.angle + math.pi / 2) * 5
+        pygame.draw.line(surface, ORANGE, (int(bx - px), int(by - py_o)), (int(bx + px), int(by + py_o)), 3)
+
+    def _draw_frost(self, surface, pos, r):
+        rot = engine.frame_count * 0.005
+        for i in range(8):
+            a1 = math.pi / 4 * i + rot
+            a2 = math.pi / 4 * (i + 1) + rot
+            p1 = (int(self.pos.x + math.cos(a1) * r), int(self.pos.y + math.sin(a1) * r))
+            p2 = (int(self.pos.x + math.cos(a2) * r), int(self.pos.y + math.sin(a2) * r))
+            pygame.draw.line(surface, (100, 150, 255), p1, p2, 2)
+        pygame.draw.circle(surface, (15, 25, 50), pos, r - 4)
+        for i in range(4):
+            a = math.pi / 2 * i + engine.frame_count * 0.02
+            cx = int(self.pos.x + math.cos(a) * 7)
+            cy = int(self.pos.y + math.sin(a) * 7)
+            pygame.draw.circle(surface, (150, 200, 255), (cx, cy), 3)
+        pygame.draw.circle(surface, BLUE, pos, 4)
+        bx = self.pos.x + math.cos(self.angle) * (r + 10)
+        by = self.pos.y + math.sin(self.angle) * (r + 10)
+        pygame.draw.line(surface, (100, 180, 255), pos, (int(bx), int(by)), 3)
+
+    def _draw_lightning(self, surface, pos, r):
+        pygame.draw.circle(surface, (30, 30, 20), pos, r)
+        pygame.draw.circle(surface, YELLOW, pos, r, 2)
+        orb_pulse = 1 + math.sin(engine.frame_count * 0.12) * 0.25
+        orb_r = int(8 * orb_pulse)
+        pygame.draw.circle(surface, YELLOW, pos, orb_r)
+        pygame.draw.circle(surface, WHITE, pos, max(2, orb_r - 3))
+        for _ in range(3):
+            a = random.uniform(0, math.pi * 2)
+            sx = int(self.pos.x + math.cos(a) * (r - 2))
+            sy = int(self.pos.y + math.sin(a) * (r - 2))
+            pygame.draw.line(surface, YELLOW, pos, (sx, sy), 1)
+        dx = int(self.pos.x + math.cos(self.angle) * (r + 6))
+        dy = int(self.pos.y + math.sin(self.angle) * (r + 6))
+        pygame.draw.circle(surface, YELLOW, (dx, dy), 3)
+
+    def _draw_sniper(self, surface, pos, r):
+        diamond = [(int(self.pos.x), int(self.pos.y - r)), (int(self.pos.x + r), int(self.pos.y)),
+                   (int(self.pos.x), int(self.pos.y + r)), (int(self.pos.x - r), int(self.pos.y))]
+        pygame.draw.polygon(surface, (25, 25, 30), diamond)
+        pygame.draw.polygon(surface, WHITE, diamond, 2)
+        pygame.draw.line(surface, (80, 80, 80), (int(self.pos.x - 6), int(self.pos.y)), (int(self.pos.x + 6), int(self.pos.y)), 1)
+        pygame.draw.line(surface, (80, 80, 80), (int(self.pos.x), int(self.pos.y - 6)), (int(self.pos.x), int(self.pos.y + 6)), 1)
+        bl = r + 22 - self.recoil
+        bx = self.pos.x + math.cos(self.angle) * bl
+        by = self.pos.y + math.sin(self.angle) * bl
+        pygame.draw.line(surface, WHITE, pos, (int(bx), int(by)), 2)
+        pygame.draw.circle(surface, WHITE, (int(bx), int(by)), 2)
+
+    def _draw_chaos(self, surface, pos, r):
+        rot = engine.frame_count * 0.03
+        for i in range(3):
+            a1 = rot + (math.pi * 2 / 3) * i
+            a2 = rot + (math.pi * 2 / 3) * (i + 1)
+            p1 = (int(self.pos.x + math.cos(a1) * r), int(self.pos.y + math.sin(a1) * r))
+            p2 = (int(self.pos.x + math.cos(a2) * r), int(self.pos.y + math.sin(a2) * r))
+            pygame.draw.line(surface, [MAGENTA, PURPLE, CYAN][i], p1, p2, 2)
+        phase = engine.frame_count * 0.05
+        cr = int(128 + 127 * math.sin(phase))
+        cg = int(128 + 127 * math.sin(phase + 2))
+        cb = int(128 + 127 * math.sin(phase + 4))
+        orb_c = (cr, cg, cb)
+        pygame.draw.circle(surface, orb_c, pos, 9)
+        pygame.draw.circle(surface, WHITE, pos, 5)
+        for i in range(3):
+            a = engine.frame_count * 0.04 + (math.pi * 2 / 3) * i
+            ox = int(self.pos.x + math.cos(a) * (r - 5))
+            oy = int(self.pos.y + math.sin(a) * (r - 5))
+            pygame.draw.circle(surface, orb_c, (ox, oy), 2)
+
+    def _draw_flame(self, surface, pos, r):
+        pygame.draw.circle(surface, (50, 25, 10), pos, r)
+        pygame.draw.circle(surface, (255, 120, 20), pos, r, 2)
+        for i in range(4):
+            a = math.pi / 2 * i + engine.frame_count * 0.01
+            vx = int(self.pos.x + math.cos(a) * (r - 5))
+            vy = int(self.pos.y + math.sin(a) * (r - 5))
+            vc = (255, random.randint(80, 180), 0) if self.target else (100, 40, 10)
+            pygame.draw.circle(surface, vc, (vx, vy), 3)
+        fp = 1 + math.sin(engine.frame_count * 0.15) * 0.3
+        fr = int(7 * fp)
+        pygame.draw.circle(surface, (255, 100, 0), pos, fr)
+        pygame.draw.circle(surface, (255, 200, 50), pos, max(2, fr - 3))
+        nl = r + 10
+        nx = self.pos.x + math.cos(self.angle) * nl
+        ny = self.pos.y + math.sin(self.angle) * nl
+        pygame.draw.line(surface, (200, 80, 0), pos, (int(nx), int(ny)), 4)
+        px = math.cos(self.angle + math.pi / 2) * 5
+        py_o = math.sin(self.angle + math.pi / 2) * 5
+        pygame.draw.line(surface, (255, 120, 20), (int(nx - px), int(ny - py_o)), (int(nx + px), int(ny + py_o)), 3)
+
+    def _draw_missile(self, surface, pos, r):
+        for i in range(5):
+            a1 = math.pi * 2 / 5 * i - math.pi / 2
+            a2 = math.pi * 2 / 5 * (i + 1) - math.pi / 2
+            p1 = (int(self.pos.x + math.cos(a1) * r), int(self.pos.y + math.sin(a1) * r))
+            p2 = (int(self.pos.x + math.cos(a2) * r), int(self.pos.y + math.sin(a2) * r))
+            pygame.draw.line(surface, PINK, p1, p2, 2)
+        pygame.draw.circle(surface, (35, 20, 30), pos, r - 4)
+        for offset in [-5, 0, 5]:
+            px = math.cos(self.angle + math.pi / 2) * offset
+            py_o = math.sin(self.angle + math.pi / 2) * offset
+            sx = self.pos.x + px
+            sy = self.pos.y + py_o
+            ex = sx + math.cos(self.angle) * (r + 12 - self.recoil)
+            ey = sy + math.sin(self.angle) * (r + 12 - self.recoil)
+            pygame.draw.line(surface, PINK, (int(sx), int(sy)), (int(ex), int(ey)), 2)
+        pygame.draw.circle(surface, PINK, pos, 4)
+
+    def _draw_laser(self, surface, pos, r):
+        # Sleek red base with focusing lens
+        pygame.draw.circle(surface, (40, 15, 15), pos, r)
+        pygame.draw.circle(surface, (255, 50, 50), pos, r, 2)
+        pygame.draw.circle(surface, (255, 100, 100), pos, 6)
+        bl = r + 14 - self.recoil
+        bx = self.pos.x + math.cos(self.angle) * bl
+        by = self.pos.y + math.sin(self.angle) * bl
+        pygame.draw.line(surface, (255, 50, 50), pos, (int(bx), int(by)), 2)
+        # Beam if active
+        if self.beam_target and self.beam_target.alive:
+            ramp = min(1.0, self.beam_damage_ramp / 3.0)
+            w = max(2, int(5 * ramp))
+            color = (255, int(50 + 100 * (1 - ramp)), int(50 * (1 - ramp)))
+            pygame.draw.line(surface, color, pos,
+                             (int(self.beam_target.pos.x), int(self.beam_target.pos.y)), w)
+            pygame.draw.circle(surface, (255, 200, 200),
+                               (int(self.beam_target.pos.x), int(self.beam_target.pos.y)), int(5 * ramp))
+
+    def _draw_tesla(self, surface, pos, r):
+        pygame.draw.circle(surface, (20, 20, 35), pos, r)
+        pygame.draw.circle(surface, (200, 200, 255), pos, r, 2)
+        pulse = 1 + math.sin(engine.frame_count * 0.1) * 0.1
+        pygame.draw.circle(surface, (60, 60, 100), pos, int(self.range * pulse), 1)
+        orb_r = int(8 * (1 + math.sin(engine.frame_count * 0.12) * 0.2))
+        pygame.draw.circle(surface, (200, 200, 255), pos, orb_r)
+        pygame.draw.circle(surface, WHITE, pos, max(2, orb_r - 3))
+        for _ in range(3):
+            a = random.uniform(0, math.pi * 2)
+            sx = int(self.pos.x + math.cos(a) * (r - 2))
+            sy = int(self.pos.y + math.sin(a) * (r - 2))
+            pygame.draw.line(surface, (180, 180, 255), pos, (sx, sy), 1)
+
+    def _draw_necro(self, surface, pos, r):
+        pygame.draw.circle(surface, (15, 30, 15), pos, r)
+        pygame.draw.circle(surface, (100, 200, 100), pos, r, 2)
+        # Skull-like face
+        pygame.draw.circle(surface, (180, 255, 180), (pos[0] - 4, pos[1] - 2), 3)
+        pygame.draw.circle(surface, (180, 255, 180), (pos[0] + 4, pos[1] - 2), 3)
+        pygame.draw.line(surface, (100, 200, 100), (pos[0] - 3, pos[1] + 4), (pos[0] + 3, pos[1] + 4), 2)
+        # Barrel
+        bl = r + 10
+        bx = self.pos.x + math.cos(self.angle) * bl
+        by = self.pos.y + math.sin(self.angle) * bl
+        pygame.draw.line(surface, (100, 200, 100), pos, (int(bx), int(by)), 2)
+
+    def _draw_vortex(self, surface, pos, r):
+        pygame.draw.circle(surface, (20, 10, 30), pos, r)
+        pygame.draw.circle(surface, (150, 50, 200), pos, r, 2)
+        # Spinning spiral arms
+        for i in range(4):
+            a = engine.frame_count * 0.05 + math.pi / 2 * i
+            for seg in range(6):
+                t = seg / 6
+                r_dist = 8 + (self.range * 0.7) * t
+                seg_a = a + t * 2.0
+                sx = int(self.pos.x + math.cos(seg_a) * r_dist)
+                sy = int(self.pos.y + math.sin(seg_a) * r_dist)
+                alpha = 1 - t
+                c = (int(150 * alpha), int(50 * alpha), int(200 * alpha))
+                pygame.draw.circle(surface, c, (sx, sy), max(1, int(3 * alpha)))
+        pygame.draw.circle(surface, (200, 100, 255), pos, 5)

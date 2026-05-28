@@ -429,24 +429,19 @@ class Vignette:
         surf = pygame.Surface((width, height), pygame.SRCALPHA)
         cx, cy = width // 2, height // 2
         max_dist = math.sqrt(cx * cx + cy * cy)
-        # Draw concentric ellipses from edge inward
-        steps = 30
-        for i in range(steps):
-            t = i / steps  # 0 = inner (transparent), 1 = outer (dark)
-            alpha = int(255 * intensity * (t ** 2))
-            # Radius from full-screen down
-            rx = int(cx * (1.0 + 0.5 * (1 - t)))
-            ry = int(cy * (1.0 + 0.5 * (1 - t)))
-            # Draw a ring
-            ring_surf = pygame.Surface((width, height), pygame.SRCALPHA)
-            pygame.draw.ellipse(ring_surf, (*color, alpha),
+        # Radial gradient — outer edges get dark, center stays clear
+        steps = 40
+        for i in range(steps, 0, -1):
+            t = i / steps  # 1 = outermost, 0 = center
+            # Only darken outer 40% of screen
+            if t < 0.6:
+                continue
+            alpha = int(200 * intensity * ((t - 0.6) / 0.4) ** 1.5)
+            alpha = min(alpha, 200)
+            rx = int(width * 0.5 * t)
+            ry = int(height * 0.5 * t)
+            pygame.draw.ellipse(surf, (*color, alpha),
                                 (cx - rx, cy - ry, rx * 2, ry * 2))
-            # Cut out inner portion
-            inner_rx = int(cx * (1.0 + 0.5 * (1 - (i + 1) / steps)))
-            inner_ry = int(cy * (1.0 + 0.5 * (1 - (i + 1) / steps)))
-            pygame.draw.ellipse(ring_surf, (0, 0, 0, 0),
-                                (cx - inner_rx, cy - inner_ry, inner_rx * 2, inner_ry * 2))
-            surf.blit(ring_surf, (0, 0))
         return surf
 
     def draw(self, surface):
@@ -477,19 +472,18 @@ class HitFlash:
     def __init__(self):
         self.flashes = []  # [(rect, color, life, max_life)]
 
-    def trigger(self, rect_or_pos, color=(255, 255, 255), duration=6, radius=20):
-        """
-        Trigger a hit flash.
-        rect_or_pos: pygame.Rect or (x, y) tuple.
-        """
+    def trigger(self, rect_or_pos, color=(255, 255, 255), duration=3, radius=12):
+        """Trigger a brief hit flash. Duration in frames (very short)."""
+        if len(self.flashes) > 20:
+            self.flashes.pop(0)
         if isinstance(rect_or_pos, pygame.Rect):
-            rect = rect_or_pos
+            cx, cy = rect_or_pos.center
         else:
-            x, y = rect_or_pos
-            rect = pygame.Rect(x - radius, y - radius, radius * 2, radius * 2)
+            cx, cy = int(rect_or_pos[0]), int(rect_or_pos[1])
         self.flashes.append({
-            'rect': rect,
+            'x': cx, 'y': cy,
             'color': color,
+            'radius': radius,
             'life': duration,
             'max_life': duration,
         })
@@ -501,10 +495,11 @@ class HitFlash:
 
     def draw(self, surface):
         for f in self.flashes:
-            alpha = int(255 * (f['life'] / f['max_life']))
-            flash_surf = pygame.Surface((f['rect'].width, f['rect'].height), pygame.SRCALPHA)
-            flash_surf.fill((*f['color'], alpha))
-            surface.blit(flash_surf, f['rect'].topleft, special_flags=pygame.BLEND_RGB_ADD)
+            t = f['life'] / f['max_life']
+            r = max(1, int(f['radius'] * t))
+            alpha = t
+            color = tuple(min(255, int(c * alpha)) for c in f['color'])
+            pygame.draw.circle(surface, color, (f['x'], f['y']), r)
 
 
 # ---------------------------------------------------------------------------
@@ -859,9 +854,9 @@ class VFXManager:
         if trail in self.trails:
             self.trails.remove(trail)
 
-    def flash(self, pos, color=(255, 255, 255), duration=6, radius=20):
+    def flash(self, x, y, color=(255, 255, 255), radius=12, duration=4):
         """Trigger a hit flash at position."""
-        self.hit_flash.trigger(pos, color, duration, radius)
+        self.hit_flash.trigger((x, y), color, duration, radius)
 
     def ring(self, x, y, color, max_radius=100, speed=4.0):
         """Spawn a pulse ring."""
@@ -874,3 +869,12 @@ class VFXManager:
     def warp_grid(self, x, y, strength=30, radius=150):
         """Add a warp influence to the background grid this frame."""
         self.grid.set_warp_point(x, y, strength, radius)
+
+    def clear(self):
+        """Clear all active VFX (use on state transitions)."""
+        self.pulse_rings.rings.clear()
+        self.hit_flash.flashes.clear()
+        self.shockwaves.waves.clear()
+        self.beams.clear()
+        self.lightnings.clear()
+        self.trails.clear()

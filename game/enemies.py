@@ -200,9 +200,10 @@ class Enemy:
             dmg *= 2.2
         self.hp -= dmg
         damage_numbers.append(DamageNumber(self.pos.x, self.pos.y, dmg, YELLOW if crit else WHITE, crit))
-        # VFX hit flash
-        flash_color = YELLOW if crit else WHITE
-        engine.vfx.flash(self.pos.x, self.pos.y, flash_color, self.radius if crit else 6)
+        # VFX hit flash — only on significant hits (>5% HP), not DOT ticks
+        if dmg > self.max_hp * 0.05 or crit:
+            flash_color = YELLOW if crit else WHITE
+            engine.vfx.flash(self.pos.x, self.pos.y, flash_color, self.radius if crit else 6)
         if self.hp <= 0:
             self.die()
 

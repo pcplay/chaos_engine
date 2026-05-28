@@ -668,6 +668,8 @@ class PlayingState(BaseState):
         self.skill_tree = SkillTree()
         self.skill_tree_state = SkillTreeState(state_manager, self.skill_tree)
         self.skill_tree_open = False
+        self.paused = False
+        self.paused = False
         self._init_game()
 
     def _init_game(self):
@@ -694,6 +696,7 @@ class PlayingState(BaseState):
         game.enemies.damage_numbers = damage_numbers
 
         engine.particles.particles.clear()
+        engine.vfx.clear()
         engine.audio.play_bgm(8)
 
     def handle_events(self, events):
@@ -743,6 +746,8 @@ class PlayingState(BaseState):
                 if event.key == pygame.K_ESCAPE:
                     self.placing = False
                     self.selected_tower = None
+                    if not self.placing and not self.selected_tower:
+                        self.paused = not self.paused
 
                 if event.key == pygame.K_m:
                     engine.audio.toggle_mute()
@@ -793,17 +798,21 @@ class PlayingState(BaseState):
                                                          ExplosionType.CONFETTI, 0.6)
                                 self.placing = False
                     else:
-                        self.selected_tower = None
-                        for t in self.towers:
-                            if (t.pos - mouse_pos).length() < 25:
-                                self.selected_tower = t
-                                break
+                        # Check tower panel buttons first
+                        if not self._handle_tower_panel_click(mouse_pos):
+                            self.selected_tower = None
+                            for t in self.towers:
+                                if (t.pos - mouse_pos).length() < 25:
+                                    self.selected_tower = t
+                                    break
                 elif event.button == 3:
                     self.hero.right_click(mouse_pos, self.enemies, self.projectiles)
 
         return None
 
     def update(self, dt):
+        if self.paused:
+            return
         if self.game_over or self.skill_tree_open:
             if self.skill_tree_open:
                 self.skill_tree_state.update(dt)
@@ -861,9 +870,10 @@ class PlayingState(BaseState):
         self.game_chaos.update(self.state, self.enemies, self.towers, dt)
         engine.particles.update(dt)
 
-        # VFX: warp grid near hero position
+        # VFX update + warp grid near hero position
+        engine.vfx.update(dt)
         if self.hero.unlocked:
-            engine.vfx.warp_grid(self.hero.pos, 80)
+            engine.vfx.warp_grid(self.hero.pos.x, self.hero.pos.y, 30, 80)
 
         for d in damage_numbers:
             d.update(dt)
@@ -901,6 +911,10 @@ class PlayingState(BaseState):
         draw_hud(surface, self.state, self.hero, self.wave_mgr, self.game_chaos, self.economy)
         draw_shop(surface, self.state["gold"], self.selected_tower, self.shop_selected)
 
+        # Tower upgrade panel (near selected tower)
+        if self.selected_tower and not self.game_over:
+            self._draw_tower_panel(surface, self.selected_tower)
+
         # VFX post-process (bloom + vignette) — applied last
         engine.vfx.draw_post_process(surface)
 
@@ -921,6 +935,78 @@ class PlayingState(BaseState):
 
         if self.skill_tree_open:
             self.skill_tree_state.draw(surface)
+
+        if self.paused and not self.game_over:
+            engine.ui.overlay(surface, 150)
+            engine.ui.text_centered(surface, "PAUSED", WIDTH // 2, HEIGHT // 3, WHITE, engine.ui.font_huge)
+            engine.ui.text_centered(surface, "ESC to resume", WIDTH // 2, HEIGHT // 3 + 50,
+                                    (120, 120, 120), engine.ui.font_med)
+
+    def _draw_tower_panel(self, surface, tower):
+        """Draw upgrade/sell panel near selected tower."""
+        data = TOWER_DATA[tower.tower_type]
+        # Panel position — offset to right of tower, clamp to screen
+        px = int(tower.pos.x + 35)
+        py = int(tower.pos.y - 50)
+        pw, ph = 140, 95
+        if px + pw > WIDTH - 10:
+            px = int(tower.pos.x - 35 - pw)
+        if py < 10:
+            py = 10
+        if py + ph > HEIGHT - 100:
+            py = HEIGHT - 100 - ph
+
+        # Background
+        panel_surf = pygame.Surface((pw, ph), pygame.SRCALPHA)
+        panel_surf.fill((20, 20, 30, 220))
+        surface.blit(panel_surf, (px, py))
+        pygame.draw.rect(surface, tower.color, (px, py, pw, ph), 1)
+
+        # Tower info
+        engine.ui.text(surface, f"{data['name']} Lv{tower.level}", px + 5, py + 4, tower.color, engine.ui.font_small)
+        engine.ui.text(surface, f"DMG:{tower.damage} SPD:{tower.fire_rate}", px + 5, py + 20, (150, 150, 150), engine.ui.font_small)
+
+        # Upgrade button
+        upgrade_cost = tower.get_upgrade_cost()
+        self._upgrade_btn = pygame.Rect(px + 5, py + 38, pw - 10, 22)
+        if upgrade_cost:
+            can_afford = self.state["gold"] >= upgrade_cost
+            btn_color = GOLD if can_afford else (60, 60, 60)
+            pygame.draw.rect(surface, (30, 40, 30) if can_afford else (25, 25, 25), self._upgrade_btn)
+            pygame.draw.rect(surface, btn_color, self._upgrade_btn, 1)
+            engine.ui.text(surface, f"Upgrade ${upgrade_cost}", px + 10, py + 41, btn_color, engine.ui.font_small)
+        else:
+            pygame.draw.rect(surface, (25, 25, 25), self._upgrade_btn)
+            engine.ui.text(surface, "MAX LEVEL", px + 10, py + 41, GOLD, engine.ui.font_small)
+
+        # Sell button
+        sell_value = data["cost"] // 2
+        self._sell_btn = pygame.Rect(px + 5, py + 65, pw - 10, 22)
+        pygame.draw.rect(surface, (40, 20, 20), self._sell_btn)
+        pygame.draw.rect(surface, RED, self._sell_btn, 1)
+        engine.ui.text(surface, f"Sell +${sell_value}", px + 10, py + 68, RED, engine.ui.font_small)
+
+    def _handle_tower_panel_click(self, mouse_pos):
+        """Check if click hit upgrade/sell buttons. Returns True if handled."""
+        if not self.selected_tower:
+            return False
+
+        if hasattr(self, '_upgrade_btn') and self._upgrade_btn.collidepoint(mouse_pos.x, mouse_pos.y):
+            cost = self.selected_tower.get_upgrade_cost()
+            if cost and self.state["gold"] >= cost:
+                self.state["gold"] -= cost
+                self.selected_tower.upgrade()
+            return True
+
+        if hasattr(self, '_sell_btn') and self._sell_btn.collidepoint(mouse_pos.x, mouse_pos.y):
+            refund = TOWER_DATA[self.selected_tower.tower_type]["cost"] // 2
+            self.state["gold"] += refund
+            self.towers.remove(self.selected_tower)
+            self.selected_tower = None
+            engine.audio.play(SoundType.SELL)
+            return True
+
+        return False
 
 
 # === MAIN ===
